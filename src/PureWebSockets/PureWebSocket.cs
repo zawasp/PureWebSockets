@@ -11,7 +11,6 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Net;
 using System.Net.WebSockets;
-using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -37,7 +36,6 @@ namespace PureWebSockets
         private bool _senderRunning;
         private Task _senderTask;
         private CancellationTokenSource _tokenSource = new CancellationTokenSource();
-        private ClientWebSocket _ws;
 
         public PureWebSocket(string url, IPureWebSocketOptions options)
         {
@@ -63,12 +61,12 @@ namespace PureWebSockets
         /// <summary>
         /// The Client Web Socket Instance
         /// </summary>
-        public ClientWebSocket Ws { get => _ws; }
+        public ClientWebSocket Ws { get; private set; }
 
         /// <summary>
         ///     The current state of the connection.
         /// </summary>
-        public WebSocketState State => _ws.State;
+        public WebSocketState State => Ws.State;
 
         /// <summary>
         ///     The current number of items waiting to be sent.
@@ -78,8 +76,8 @@ namespace PureWebSockets
         [EditorBrowsable(EditorBrowsableState.Never)]
         public TimeSpan DefaultKeepAliveInterval
         {
-            get => _ws.Options.KeepAliveInterval;
-            set => _ws.Options.KeepAliveInterval = value;
+            get => Ws.Options.KeepAliveInterval;
+            set => Ws.Options.KeepAliveInterval = value;
         }
 
         public event Data OnData;
@@ -93,7 +91,7 @@ namespace PureWebSockets
 
         private void InitializeClient()
         {
-            _ws = new ClientWebSocket();
+            Ws = new ClientWebSocket();
 
             try
             {
@@ -113,17 +111,17 @@ namespace PureWebSockets
 
             if (_options.Cookies != null && _options.Cookies.Count > 0)
             {
-                _ws.Options.Cookies = _options.Cookies;
+                Ws.Options.Cookies = _options.Cookies;
             }
 
             if (_options.ClientCertificates != null && _options.ClientCertificates.Count > 0)
             {
-                _ws.Options.ClientCertificates = _options.ClientCertificates;
+                Ws.Options.ClientCertificates = _options.ClientCertificates;
             }
 
             if (_options.Proxy != null)
             {
-                _ws.Options.Proxy = _options.Proxy;
+                Ws.Options.Proxy = _options.Proxy;
             }
 
             if (_options.SubProtocols != null)
@@ -132,7 +130,7 @@ namespace PureWebSockets
                 {
                     try
                     {
-                        _ws.Options.AddSubProtocol(protocol);
+                        Ws.Options.AddSubProtocol(protocol);
                     }
                     catch (Exception ex)
                     {
@@ -149,7 +147,7 @@ namespace PureWebSockets
                 {
                     try
                     {
-                        _ws.Options.SetRequestHeader(h.Item1, h.Item2);
+                        Ws.Options.SetRequestHeader(h.Item1, h.Item2);
                     }
                     catch (Exception ex)
                     {
@@ -166,22 +164,22 @@ namespace PureWebSockets
             try
             {
                 _disconnectCalled = false;
-                _ws.ConnectAsync(new Uri(Url), _tokenSource.Token).Wait(15000);
+                Ws.ConnectAsync(new Uri(Url), _tokenSource.Token).Wait(15000);
                 _logger.Log("Starting tasks.");
                 StartListener();
                 StartSender();
 
                 Task.Run(async () =>
                 {
-                    while (_ws.State != WebSocketState.Open)
+                    while (Ws.State != WebSocketState.Open)
                     {
                         await Task.Delay(1).ConfigureAwait(false);
                     }
                 }).Wait(15000);
 
-                _logger.Log($"Connect result: {_ws.State == WebSocketState.Open}, State {_ws.State}");
+                _logger.Log($"Connect result: {Ws.State == WebSocketState.Open}, State {Ws.State}");
 
-                return _ws.State == WebSocketState.Open;
+                return Ws.State == WebSocketState.Open;
             }
             catch (Exception ex)
             {
@@ -197,7 +195,7 @@ namespace PureWebSockets
             try
             {
                 _disconnectCalled = false;
-                await _ws.ConnectAsync(new Uri(Url), _tokenSource.Token).ConfigureAwait(false);
+                await Ws.ConnectAsync(new Uri(Url), _tokenSource.Token).ConfigureAwait(false);
                 await _logger.LogAsync("Starting tasks.").ConfigureAwait(false);
                 StartListener();
                 StartSender();
@@ -206,15 +204,15 @@ namespace PureWebSockets
                 {
                     var st = DateTime.UtcNow;
 
-                    while (_ws.State != WebSocketState.Open && (DateTime.UtcNow - st).TotalSeconds < 16)
+                    while (Ws.State != WebSocketState.Open && (DateTime.UtcNow - st).TotalSeconds < 16)
                     {
                         await Task.Delay(1).ConfigureAwait(false);
                     }
                 });
 
-                await _logger.LogAsync($"Connect result: {_ws.State == WebSocketState.Open}, State {_ws.State}").ConfigureAwait(false);
+                await _logger.LogAsync($"Connect result: {Ws.State == WebSocketState.Open}, State {Ws.State}").ConfigureAwait(false);
 
-                return _ws.State == WebSocketState.Open;
+                return Ws.State == WebSocketState.Open;
             }
             catch (Exception ex)
             {
@@ -349,7 +347,7 @@ namespace PureWebSockets
                 try
                 {
                     var lastState = State;
-                    while (_ws != null && !_disposedValue)
+                    while (Ws != null && !_disposedValue)
                     {
                         if (lastState == State)
                         {
@@ -426,10 +424,10 @@ namespace PureWebSockets
                                 break;
                             }
 
-                            OnClosed?.Invoke(_ws.CloseStatus ?? WebSocketCloseStatus.Empty);
-                            if (_ws.CloseStatus != null && _ws.CloseStatus != WebSocketCloseStatus.NormalClosure)
+                            OnClosed?.Invoke(Ws.CloseStatus ?? WebSocketCloseStatus.Empty);
+                            if (Ws.CloseStatus != null && Ws.CloseStatus != WebSocketCloseStatus.NormalClosure)
                             {
-                                OnError?.Invoke(new Exception(_ws.CloseStatus + " " + _ws.CloseStatusDescription));
+                                OnError?.Invoke(new Exception(Ws.CloseStatus + " " + Ws.CloseStatusDescription));
                             }
                         }
 
@@ -471,7 +469,7 @@ namespace PureWebSockets
                 }
 
                 _logger.Log("Disposing of current websocket.");
-                _ws.Dispose();
+                Ws.Dispose();
 
                 OnStateChanged?.Invoke(WebSocketState.Connecting, WebSocketState.Aborted);
 
@@ -491,14 +489,14 @@ namespace PureWebSockets
                         }
 
                         _logger.Log("Attempting connect.");
-                        connected = _ws.ConnectAsync(new Uri(Url), _tokenSource.Token).Wait(15000);
+                        connected = Ws.ConnectAsync(new Uri(Url), _tokenSource.Token).Wait(15000);
                         _logger.Log($"Connect result: {connected}");
                     }
                     catch (Exception ex)
                     {
                         _logger.Log($"Reconnect threw an error: {ex.Message}.");
                         _logger.Log("Disposing of current websocket.");
-                        _ws.Dispose();
+                        Ws.Dispose();
                         _logger.Log("Processing reconnect strategy.");
                         await Task.Delay(_options.MyReconnectStrategy.GetReconnectInterval()).ConfigureAwait(false);
                         _options.MyReconnectStrategy.ProcessValues();
@@ -552,7 +550,7 @@ namespace PureWebSockets
                 _listenerRunning = true;
                 try
                 {
-                    while (_ws.State == WebSocketState.Open && !_disposedValue && !_reconnecting)
+                    while (Ws.State == WebSocketState.Open && !_disposedValue && !_reconnecting)
                     {
                         var message = "";
                         var binary = new List<byte>();
@@ -564,14 +562,14 @@ namespace PureWebSockets
 
                         try
                         {
-                            res = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer), _tokenSource.Token);
+                            res = await Ws.ReceiveAsync(new ArraySegment<byte>(buffer), _tokenSource.Token);
                         }
                         catch (Exception ex)
                         {
                             _logger.Log($"Receive threw an exception: {ex.Message}");
                             // Most likely socket error
                             _reconnectNeeded = true;
-                            _ws.Abort();
+                            Ws.Abort();
                             break;
                         }
 
@@ -583,7 +581,7 @@ namespace PureWebSockets
                         if (res.MessageType == WebSocketMessageType.Close)
                         {
                             _logger.Log("Server requested close.");
-                            await _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "SERVER REQUESTED CLOSE",
+                            await Ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "SERVER REQUESTED CLOSE",
                                 _tokenSource.Token);
                             _disconnectCalled = true;
                             return Task.CompletedTask;
@@ -655,7 +653,7 @@ namespace PureWebSockets
                 {
                     while (!_disposedValue && !_reconnecting)
                     {
-                        if (_ws.State == WebSocketState.Open && !_reconnecting)
+                        if (Ws.State == WebSocketState.Open && !_reconnecting)
                         {
                             var msg = _sendQueue.Take(_tokenSource.Token);
                             if (msg.Key.Add(_options.SendCacheItemTimeout) < DateTime.UtcNow)
@@ -668,7 +666,7 @@ namespace PureWebSockets
                             try
                             {
                                 _logger.Log($"Sending message: {msg.Key} {msg.Value}.");
-                                await _ws.SendAsync(new ArraySegment<byte>(buffer), WebSocketMessageType.Text, true,
+                                await Ws.SendAsync(new ArraySegment<byte>(buffer), WebSocketMessageType.Text, true,
                                     _tokenSource.Token).ConfigureAwait(false);
                             }
                             catch (Exception ex)
@@ -677,7 +675,7 @@ namespace PureWebSockets
                                 // Most likely socket error
                                 OnSendFailed?.Invoke(msg.Value, ex);
                                 _reconnectNeeded = true;
-                                _ws.Abort();
+                                Ws.Abort();
                                 break;
                             }
                         }
@@ -705,7 +703,7 @@ namespace PureWebSockets
             {
                 _logger.Log("Disconnect called, closing websocket.");
                 _disconnectCalled = true;
-                _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "NORMAL SHUTDOWN", _tokenSource.Token)
+                Ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "NORMAL SHUTDOWN", _tokenSource.Token)
                     .Wait(_options.DisconnectWait);
             }
             catch (Exception ex)
@@ -741,7 +739,7 @@ namespace PureWebSockets
                     _tokenSource.Cancel();
                     Thread.Sleep(500);
                     _tokenSource.Dispose();
-                    _ws.Dispose();
+                    Ws.Dispose();
                 }
 
                 _disposedValue = true;
